@@ -4,11 +4,11 @@ import { createAdSchema, createAdsArraySchema } from './schema.ts'
 import type { AdLlmOutput } from './schema.ts'
 import type { BrandProfileLlmOutput } from '../brand-profile/index.ts'
 import type { z } from 'zod'
+import { LLM_TIMEOUT_MS } from '../../lib/limits.ts'
 
 // Sonnet: copywriting creativo on-tone se beneficia de un modelo mas capaz que
 // el Haiku que usamos para extraccion factual del perfil de marca.
 const MODEL = 'claude-sonnet-5'
-const LLM_TIMEOUT_MS = 25_000
 const MAX_OUTPUT_TOKENS = 2_048
 const MAX_RETRIES_ON_INVALID_OUTPUT = 1
 

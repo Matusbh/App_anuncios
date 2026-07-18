@@ -12,6 +12,11 @@ import { generateAds } from '../integrations/ad-generation/index.ts'
 export const createProject = createServerFn({ method: 'POST' })
   .validator(z.object({ url: z.string().min(1, 'URL requerida') }))
   .handler(async ({ data }) => {
+    const startedAt = Date.now()
+    // Solo suma tokens de llamadas al LLM que tuvieron exito: las que fallan
+    // no devuelven usage (ver documentacion.md, limitacion conocida).
+    let totalTokensUsed = 0
+
     // Insert de una unica fila: .returning() siempre trae exactamente esa fila.
     const [project] = await db
       .insert(projects)
@@ -31,6 +36,8 @@ export const createProject = createServerFn({ method: 'POST' })
         .set({
           status: 'failed',
           errorMessage: extracted.errorReason,
+          totalTokensUsed,
+          processingTimeMs: Date.now() - startedAt,
           updatedAt: new Date(),
         })
         .where(eq(projects.id, project.id))
@@ -48,11 +55,16 @@ export const createProject = createServerFn({ method: 'POST' })
         .set({
           status: 'ready',
           errorMessage: `No se pudo generar el perfil de marca: ${profileResult.errorReason}`,
+          totalTokensUsed,
+          processingTimeMs: Date.now() - startedAt,
           updatedAt: new Date(),
         })
         .where(eq(projects.id, project.id))
       return { projectId: project.id, status: 'ready' as const }
     }
+
+    totalTokensUsed +=
+      profileResult.usage.inputTokens + profileResult.usage.outputTokens
 
     const profile = profileResult.profile
     await db.insert(brandProfiles).values({
@@ -75,11 +87,16 @@ export const createProject = createServerFn({ method: 'POST' })
         .set({
           status: 'ready',
           errorMessage: `No se pudieron generar los anuncios: ${adsResult.errorReason}`,
+          totalTokensUsed,
+          processingTimeMs: Date.now() - startedAt,
           updatedAt: new Date(),
         })
         .where(eq(projects.id, project.id))
       return { projectId: project.id, status: 'ready' as const }
     }
+
+    totalTokensUsed +=
+      adsResult.usage.inputTokens + adsResult.usage.outputTokens
 
     await db.insert(ads).values(
       adsResult.ads.map((ad) => ({
@@ -93,9 +110,23 @@ export const createProject = createServerFn({ method: 'POST' })
       })),
     )
 
+    // La extraccion pudo haber sido parcial (ej. Browserless tambien fallo, o
+    // la pagina siguio con poco texto tras renderizar) aunque el resto del
+    // pipeline se completara bien. No lo ocultamos solo porque el resultado
+    // final sea "ready".
+    const errorMessage = extracted.partial
+      ? `Extraccion parcial: ${extracted.partialReason}`
+      : null
+
     await db
       .update(projects)
-      .set({ status: 'ready', errorMessage: null, updatedAt: new Date() })
+      .set({
+        status: 'ready',
+        errorMessage,
+        totalTokensUsed,
+        processingTimeMs: Date.now() - startedAt,
+        updatedAt: new Date(),
+      })
       .where(eq(projects.id, project.id))
 
     return { projectId: project.id, status: 'ready' as const }

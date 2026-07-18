@@ -17,6 +17,10 @@ export const projects = pgTable('projects', {
     .default('pending')
     .$type<'pending' | 'extracting' | 'ready' | 'failed'>(),
   errorMessage: text('error_message'),
+  // Instrumentacion de coste/latencia: suma de tokens (input+output) de las
+  // llamadas al LLM que tuvieron exito, y tiempo total de createProject en ms.
+  totalTokensUsed: integer('total_tokens_used'),
+  processingTimeMs: integer('processing_time_ms'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 })

@@ -4,6 +4,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { getProject } from '../server/projects.ts'
 import { regenerateAd, updateAd } from '../server/ads.ts'
 import type { Ad, BrandProfile, Project } from '../db/schema.ts'
+import { SLOW_PROCESSING_THRESHOLD_MS } from '../lib/limits.ts'
 
 export const Route = createFileRoute('/project/$projectId')({
   params: {
@@ -41,10 +42,31 @@ function ProjectView({
     setAds((prev) => prev.map((ad) => (ad.id === updated.id ? updated : ad)))
   }
 
+  const isSlow =
+    project.processingTimeMs !== null &&
+    project.processingTimeMs > SLOW_PROCESSING_THRESHOLD_MS
+
   return (
     <div className="mx-auto max-w-5xl p-8">
       <h1 className="mb-1 break-all text-2xl font-bold">{project.url}</h1>
-      <p className="mb-6 text-sm text-gray-500">Estado: {project.status}</p>
+      <p className="mb-1 text-sm text-gray-500">Estado: {project.status}</p>
+      <p className="mb-6 text-sm text-gray-500">
+        {formatProcessingSummary(
+          project.processingTimeMs,
+          project.totalTokensUsed,
+        )}
+      </p>
+
+      {isSlow && (
+        <div className="mb-6 rounded border border-yellow-300 bg-yellow-50 p-4 text-yellow-800">
+          <p className="font-semibold">Esto tardo mas de lo esperado</p>
+          <p>
+            El proceso tardo {formatSeconds(project.processingTimeMs)} en total
+            (umbral: {formatSeconds(SLOW_PROCESSING_THRESHOLD_MS)}). Puede que
+            alguna parte se haya degradado por un timeout.
+          </p>
+        </div>
+      )}
 
       {project.status === 'failed' && (
         <div className="mb-6 rounded border border-red-300 bg-red-50 p-4 text-red-800">
@@ -71,6 +93,30 @@ function ProjectView({
       )}
     </div>
   )
+}
+
+function formatSeconds(ms: number | null): string {
+  if (ms === null) return '—'
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+// No usamos toLocaleString: sin datos ICU completos (Node local o el runtime
+// de Workers) el separador de miles de locales no-ingles no se aplica.
+function formatThousands(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+function formatProcessingSummary(
+  processingTimeMs: number | null,
+  totalTokensUsed: number | null,
+): string {
+  const parts: Array<string> = []
+  if (processingTimeMs !== null)
+    parts.push(`Generado en ${formatSeconds(processingTimeMs)}`)
+  if (totalTokensUsed !== null) {
+    parts.push(`${formatThousands(totalTokensUsed)} tokens usados`)
+  }
+  return parts.join(' · ')
 }
 
 function NotFoundAware({ value }: { value: string }) {

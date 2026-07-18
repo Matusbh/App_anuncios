@@ -1,5 +1,6 @@
+import { BROWSERLESS_TIMEOUT_MS } from '../../lib/limits.ts'
+
 const BROWSERLESS_BASE_URL = 'https://production-lon.browserless.io'
-const BROWSERLESS_TIMEOUT_MS = 20_000
 
 type BrowserlessResult =
   { ok: true; html: string } | { ok: false; errorReason: string }

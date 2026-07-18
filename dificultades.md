@@ -71,3 +71,15 @@ Registro vivo de cosas en las que nos hemos atascado durante el desarrollo y có
 **Síntoma:** El patrón recomendado (`chromium-cli`) para conducir un navegador headless no estaba instalado ni disponible en este entorno Windows (a diferencia de un contenedor Linux típico).
 
 **Solución:** Instalar Playwright de forma temporal con `npm install --no-save playwright` (no queda en `package.json`/lockfile) + `npx playwright install chromium`, escribir un script de verificación ad-hoc, y desinstalarlo (`npm uninstall playwright`) al terminar. Quedó fuera del repo, solo se usó para esta verificación puntual.
+
+---
+
+## 7. `toLocaleString('es-ES')` no aplica separador de miles
+
+**Cuándo:** Mostrando el total de tokens usados en la página del proyecto (instrumentación de coste/latencia).
+
+**Síntoma:** `(4758).toLocaleString('es-ES')` devolvía `"4758"` en vez de `"4.758"` — sin separador de miles, como si el locale no se aplicara.
+
+**Causa:** Node (y probablemente el runtime de Workers) suele compilarse con datos ICU reducidos (`small-icu`), que solo incluyen datos completos para `en-US`. Locales como `es-ES` caen silenciosamente a un formato sin agrupar, sin lanzar ningún error — el bug es fácil de no notar porque no falla, solo se ve "raro".
+
+**Solución:** No depender de `Intl`/`toLocaleString` para esto. Formatear el separador de miles a mano con una regex (`n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')`), que funciona igual en cualquier runtime sin depender de qué datos ICU estén compilados.

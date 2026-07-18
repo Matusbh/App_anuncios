@@ -3,11 +3,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import { brandProfileLlmSchema } from './schema.ts'
 import type { BrandProfileLlmOutput } from './schema.ts'
 import type { ExtractedPageContent } from '../web-extraction/index.ts'
+import { LLM_TIMEOUT_MS } from '../../lib/limits.ts'
 
 // Haiku: extraccion estructurada de hechos explicitos, no razonamiento creativo
 // profundo. Rapido y barato, encaja con el requisito de coste/latencia acotados.
 const MODEL = 'claude-haiku-4-5'
-const LLM_TIMEOUT_MS = 25_000
 const MAX_OUTPUT_TOKENS = 1024
 /** Tope de caracteres de texto visible enviados al LLM, para acotar coste por llamada. */
 const MAX_VISIBLE_TEXT_CHARS = 6_000

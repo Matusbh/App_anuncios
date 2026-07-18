@@ -1,8 +1,8 @@
 import { extractVisibleText, parseHtmlContent } from './html-parsing.ts'
 import { fetchRenderedHtml } from './browserless.ts'
 import type { ExtractPageContentResult } from './types.ts'
+import { SIMPLE_FETCH_TIMEOUT_MS } from '../../lib/limits.ts'
 
-const SIMPLE_FETCH_TIMEOUT_MS = 15_000
 /** Por debajo de esto asumimos que es una SPA que necesita JS para pintar contenido. */
 const MIN_VISIBLE_TEXT_THRESHOLD = 250
 const USER_AGENT =
