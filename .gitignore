@@ -11,3 +11,6 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
+
+# Notas de estudio personales, no es parte del entregable
+aprender.md
