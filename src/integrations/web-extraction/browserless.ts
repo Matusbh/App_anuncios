@@ -11,7 +11,7 @@ export async function fetchRenderedHtml(
 ): Promise<BrowserlessResult> {
   const token = process.env.BROWSERLESS_TOKEN
   if (!token) {
-    return { ok: false, errorReason: 'BROWSERLESS_TOKEN no esta configurado' }
+    return { ok: false, errorReason: 'BROWSERLESS_TOKEN is not configured' }
   }
 
   try {
@@ -28,7 +28,7 @@ export async function fetchRenderedHtml(
     if (!response.ok) {
       return {
         ok: false,
-        errorReason: `Browserless respondio ${response.status} ${response.statusText}`,
+        errorReason: `Browserless responded with ${response.status} ${response.statusText}`,
       }
     }
 
@@ -38,13 +38,13 @@ export async function fetchRenderedHtml(
     if (error instanceof Error && error.name === 'TimeoutError') {
       return {
         ok: false,
-        errorReason: 'Browserless supero el timeout de renderizado',
+        errorReason: 'Browserless exceeded the rendering timeout',
       }
     }
     const message = error instanceof Error ? error.message : String(error)
     return {
       ok: false,
-      errorReason: `Fallo la llamada a Browserless: ${message}`,
+      errorReason: `Browserless call failed: ${message}`,
     }
   }
 }

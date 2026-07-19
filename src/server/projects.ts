@@ -10,7 +10,7 @@ import { generateBrandProfile } from '../integrations/brand-profile/index.ts'
 import { generateAds } from '../integrations/ad-generation/index.ts'
 
 export const createProject = createServerFn({ method: 'POST' })
-  .validator(z.object({ url: z.string().min(1, 'URL requerida') }))
+  .validator(z.object({ url: z.string().min(1, 'URL is required') }))
   .handler(async ({ data }) => {
     const startedAt = Date.now()
     // Solo suma tokens de llamadas al LLM que tuvieron exito: las que fallan
@@ -54,7 +54,7 @@ export const createProject = createServerFn({ method: 'POST' })
         .update(projects)
         .set({
           status: 'ready',
-          errorMessage: `No se pudo generar el perfil de marca: ${profileResult.errorReason}`,
+          errorMessage: `Could not generate the brand profile: ${profileResult.errorReason}`,
           totalTokensUsed,
           processingTimeMs: Date.now() - startedAt,
           updatedAt: new Date(),
@@ -86,7 +86,7 @@ export const createProject = createServerFn({ method: 'POST' })
         .update(projects)
         .set({
           status: 'ready',
-          errorMessage: `No se pudieron generar los anuncios: ${adsResult.errorReason}`,
+          errorMessage: `Could not generate the ads: ${adsResult.errorReason}`,
           totalTokensUsed,
           processingTimeMs: Date.now() - startedAt,
           updatedAt: new Date(),
@@ -115,7 +115,7 @@ export const createProject = createServerFn({ method: 'POST' })
     // pipeline se completara bien. No lo ocultamos solo porque el resultado
     // final sea "ready".
     const errorMessage = extracted.partial
-      ? `Extraccion parcial: ${extracted.partialReason}`
+      ? `Partial extraction: ${extracted.partialReason}`
       : null
 
     await db

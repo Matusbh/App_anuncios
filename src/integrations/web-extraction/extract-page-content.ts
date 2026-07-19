@@ -27,7 +27,7 @@ async function fetchSimpleHtml(url: string): Promise<SimpleFetchResult> {
     if (!response.ok) {
       return {
         ok: false,
-        errorReason: `La pagina respondio ${response.status} ${response.statusText}`,
+        errorReason: `The page responded with ${response.status} ${response.statusText}`,
         httpStatus: response.status,
       }
     }
@@ -37,11 +37,11 @@ async function fetchSimpleHtml(url: string): Promise<SimpleFetchResult> {
     if (error instanceof Error && error.name === 'TimeoutError') {
       return {
         ok: false,
-        errorReason: 'Timeout al hacer fetch simple de la pagina',
+        errorReason: 'Timeout while fetching the page',
       }
     }
     const message = error instanceof Error ? error.message : String(error)
-    return { ok: false, errorReason: `Fallo el fetch simple: ${message}` }
+    return { ok: false, errorReason: `Simple fetch failed: ${message}` }
   }
 }
 
@@ -57,7 +57,7 @@ export async function extractPageContent(
   try {
     new URL(url)
   } catch {
-    return { success: false, errorReason: `URL invalida: ${url}` }
+    return { success: false, errorReason: `Invalid URL: ${url}` }
   }
 
   const simple = await fetchSimpleHtml(url)
@@ -89,7 +89,7 @@ export async function extractPageContent(
       success: true,
       partial: stillThin,
       partialReason: stillThin
-        ? 'La pagina sigue con muy poco texto visible incluso tras renderizar JS'
+        ? 'The page still has very little visible text even after rendering JS'
         : undefined,
       source: 'browserless',
       content: parseHtmlContent(rendered.html, url),
@@ -102,7 +102,7 @@ export async function extractPageContent(
     return {
       success: true,
       partial: true,
-      partialReason: `Contenido minimo (probable pagina JS-rendered) y el fallback de Browserless fallo: ${rendered.errorReason}`,
+      partialReason: `Minimal content (likely a JS-rendered page) and the Browserless fallback also failed: ${rendered.errorReason}`,
       source: 'fetch',
       content: parseHtmlContent(simple.html, url),
     }
@@ -110,6 +110,6 @@ export async function extractPageContent(
 
   return {
     success: false,
-    errorReason: `Fetch simple fallo (${simple.errorReason}) y el fallback de Browserless tambien fallo (${rendered.errorReason})`,
+    errorReason: `Simple fetch failed (${simple.errorReason}) and the Browserless fallback also failed (${rendered.errorReason})`,
   }
 }

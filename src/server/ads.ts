@@ -24,7 +24,7 @@ const updateAdFieldsSchema = z
       fields.description !== undefined ||
       fields.cta !== undefined ||
       fields.imageUrl !== undefined,
-    { message: 'Debe incluir al menos un campo a actualizar' },
+    { message: 'Must include at least one field to update' },
   )
 
 export const updateAd = createServerFn({ method: 'POST' })
@@ -44,7 +44,7 @@ export const updateAd = createServerFn({ method: 'POST' })
     ).at(0)
 
     if (!updated) {
-      throw new Error(`Ad ${data.adId} no encontrado`)
+      throw new Error(`Ad ${data.adId} not found`)
     }
 
     return updated
@@ -79,7 +79,7 @@ export const regenerateAd = createServerFn({ method: 'POST' })
         await db.select().from(ads).where(eq(ads.id, data.adId))
       ).at(0)
       if (!existingAd) {
-        throw new Error(`Ad ${data.adId} no encontrado`)
+        throw new Error(`Ad ${data.adId} not found`)
       }
 
       const brandProfile = (
@@ -91,7 +91,7 @@ export const regenerateAd = createServerFn({ method: 'POST' })
       if (!brandProfile) {
         return {
           success: false,
-          errorReason: 'Este proyecto no tiene un perfil de marca guardado',
+          errorReason: 'This project does not have a saved brand profile',
         }
       }
 
@@ -132,7 +132,7 @@ export const regenerateAd = createServerFn({ method: 'POST' })
       ).at(0)
 
       if (!updated) {
-        throw new Error(`Ad ${data.adId} no encontrado al actualizar`)
+        throw new Error(`Ad ${data.adId} not found while updating`)
       }
 
       return { success: true, ad: updated }

@@ -6,12 +6,12 @@ import { createProject } from '../server/projects.ts'
 
 export const Route = createFileRoute('/')({ component: Home })
 
-// Progreso simulado: no hay SSE/polling de estado real, esto es solo
-// feedback visual mientras dura la unica llamada bloqueante a createProject.
+// Simulated progress: there's no real SSE/status polling, this is just
+// visual feedback while the single blocking createProject call runs.
 const STEPS = [
-  'Extrayendo contenido de la pagina...',
-  'Generando perfil de marca...',
-  'Generando anuncios...',
+  'Extracting page content...',
+  'Generating brand profile...',
+  'Generating ads...',
 ]
 
 function Home() {
@@ -46,7 +46,7 @@ function Home() {
     } catch (err) {
       setSubmitting(false)
       setError(
-        err instanceof Error ? err.message : 'Algo salio mal, intenta de nuevo',
+        err instanceof Error ? err.message : 'Something went wrong, try again',
       )
     }
   }
@@ -55,8 +55,7 @@ function Home() {
     <div className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-6 p-8">
       <h1 className="text-3xl font-bold">Snaprime</h1>
       <p className="text-center text-gray-600">
-        Pega la URL de una web y genera un perfil de marca y anuncios listos
-        para editar.
+        Paste a website URL and generate a brand profile and ready-to-edit ads.
       </p>
 
       <form onSubmit={handleSubmit} className="flex w-full gap-2">
@@ -65,7 +64,7 @@ function Home() {
           required
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://ejemplo.com"
+          placeholder="https://example.com"
           disabled={submitting}
           className="flex-1 rounded border border-gray-300 px-3 py-2 disabled:opacity-50"
         />
@@ -74,7 +73,7 @@ function Home() {
           disabled={submitting}
           className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
         >
-          {submitting ? 'Creando...' : 'Crear'}
+          {submitting ? 'Creating...' : 'Create'}
         </button>
       </form>
 

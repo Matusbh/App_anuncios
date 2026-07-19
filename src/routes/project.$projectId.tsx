@@ -49,7 +49,7 @@ function ProjectView({
   return (
     <div className="mx-auto max-w-5xl p-8">
       <h1 className="mb-1 break-all text-2xl font-bold">{project.url}</h1>
-      <p className="mb-1 text-sm text-gray-500">Estado: {project.status}</p>
+      <p className="mb-1 text-sm text-gray-500">Status: {project.status}</p>
       <p className="mb-6 text-sm text-gray-500">
         {formatProcessingSummary(
           project.processingTimeMs,
@@ -59,25 +59,25 @@ function ProjectView({
 
       {isSlow && (
         <div className="mb-6 rounded border border-yellow-300 bg-yellow-50 p-4 text-yellow-800">
-          <p className="font-semibold">Esto tardo mas de lo esperado</p>
+          <p className="font-semibold">This took longer than expected</p>
           <p>
-            El proceso tardo {formatSeconds(project.processingTimeMs)} en total
-            (umbral: {formatSeconds(SLOW_PROCESSING_THRESHOLD_MS)}). Puede que
-            alguna parte se haya degradado por un timeout.
+            The process took {formatSeconds(project.processingTimeMs)} in total
+            (threshold: {formatSeconds(SLOW_PROCESSING_THRESHOLD_MS)}). Some
+            part of it may have degraded due to a timeout.
           </p>
         </div>
       )}
 
       {project.status === 'failed' && (
         <div className="mb-6 rounded border border-red-300 bg-red-50 p-4 text-red-800">
-          <p className="font-semibold">No se pudo procesar esta pagina.</p>
+          <p className="font-semibold">This page could not be processed.</p>
           <p>{project.errorMessage}</p>
         </div>
       )}
 
       {project.status === 'ready' && project.errorMessage && (
         <div className="mb-6 rounded border border-yellow-300 bg-yellow-50 p-4 text-yellow-800">
-          <p className="font-semibold">Resultado parcial</p>
+          <p className="font-semibold">Partial result</p>
           <p>{project.errorMessage}</p>
         </div>
       )}
@@ -100,10 +100,10 @@ function formatSeconds(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-// No usamos toLocaleString: sin datos ICU completos (Node local o el runtime
-// de Workers) el separador de miles de locales no-ingles no se aplica.
+// We don't use toLocaleString: without full ICU data (local Node or the
+// Workers runtime) non-English locale thousands separators aren't applied.
 function formatThousands(n: number): string {
-  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
 function formatProcessingSummary(
@@ -112,18 +112,16 @@ function formatProcessingSummary(
 ): string {
   const parts: Array<string> = []
   if (processingTimeMs !== null)
-    parts.push(`Generado en ${formatSeconds(processingTimeMs)}`)
+    parts.push(`Generated in ${formatSeconds(processingTimeMs)}`)
   if (totalTokensUsed !== null) {
-    parts.push(`${formatThousands(totalTokensUsed)} tokens usados`)
+    parts.push(`${formatThousands(totalTokensUsed)} tokens used`)
   }
   return parts.join(' · ')
 }
 
 function NotFoundAware({ value }: { value: string }) {
   if (value === 'not_found') {
-    return (
-      <span className="italic text-gray-400">No encontrado en la pagina</span>
-    )
+    return <span className="italic text-gray-400">Not found on the page</span>
   }
   return <>{value}</>
 }
@@ -131,11 +129,11 @@ function NotFoundAware({ value }: { value: string }) {
 function BrandProfileCard({ profile }: { profile: BrandProfile }) {
   return (
     <div className="rounded border border-gray-200 p-4">
-      <h2 className="mb-3 text-lg font-semibold">Perfil de marca</h2>
+      <h2 className="mb-3 text-lg font-semibold">Brand profile</h2>
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <dt className="text-xs font-medium uppercase text-gray-500">
-            Que hacen
+            What they do
           </dt>
           <dd>
             <NotFoundAware value={profile.whatTheyDo} />
@@ -143,7 +141,7 @@ function BrandProfileCard({ profile }: { profile: BrandProfile }) {
         </div>
         <div>
           <dt className="text-xs font-medium uppercase text-gray-500">
-            Publico objetivo
+            Target audience
           </dt>
           <dd>
             <NotFoundAware value={profile.targetAudience} />
@@ -151,7 +149,7 @@ function BrandProfileCard({ profile }: { profile: BrandProfile }) {
         </div>
         <div>
           <dt className="text-xs font-medium uppercase text-gray-500">
-            Propuesta de valor
+            Value proposition
           </dt>
           <dd>
             <NotFoundAware value={profile.valueProposition} />
@@ -159,7 +157,7 @@ function BrandProfileCard({ profile }: { profile: BrandProfile }) {
         </div>
         <div>
           <dt className="text-xs font-medium uppercase text-gray-500">
-            Tono de voz
+            Tone of voice
           </dt>
           <dd>
             <NotFoundAware value={profile.toneOfVoice} />
@@ -170,7 +168,7 @@ function BrandProfileCard({ profile }: { profile: BrandProfile }) {
       {profile.colorPalette && profile.colorPalette.length > 0 && (
         <div className="mt-3 flex items-center gap-2">
           <span className="text-xs font-medium uppercase text-gray-500">
-            Colores
+            Colors
           </span>
           {profile.colorPalette.map((color) => (
             <span
@@ -200,9 +198,7 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
       const updated = await updateAd({ data: { adId: ad.id, fields } })
       onUpdated(updated)
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'No se pudo guardar el cambio',
-      )
+      setError(err instanceof Error ? err.message : 'Could not save the change')
     }
   }
 
@@ -217,7 +213,7 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
         onUpdated(result.ad)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo regenerar')
+      setError(err instanceof Error ? err.message : 'Could not regenerate')
     } finally {
       setRegenerating(false)
     }
@@ -237,7 +233,7 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
         />
       ) : (
         <div className="mb-3 flex h-40 w-full items-center justify-center rounded bg-gray-100 text-sm text-gray-400">
-          Sin imagen
+          No image
         </div>
       )}
 
@@ -248,13 +244,13 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
         className="text-lg font-semibold"
       />
       <EditableField
-        label="Texto principal"
+        label="Primary text"
         value={ad.primaryText ?? ''}
         onSave={(value) => saveField({ primaryText: value })}
         multiline
       />
       <EditableField
-        label="Descripcion"
+        label="Description"
         value={ad.description ?? ''}
         onSave={(value) => saveField({ description: value })}
         multiline
@@ -267,7 +263,7 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
       />
 
       {ad.isUserEdited && (
-        <p className="mt-2 text-xs text-gray-400">Editado manualmente</p>
+        <p className="mt-2 text-xs text-gray-400">Manually edited</p>
       )}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
@@ -276,7 +272,7 @@ function AdCard({ ad, onUpdated }: { ad: Ad; onUpdated: (ad: Ad) => void }) {
         disabled={regenerating}
         className="mt-3 rounded border border-gray-300 px-3 py-1 text-sm disabled:opacity-50"
       >
-        {regenerating ? 'Regenerando...' : 'Regenerar'}
+        {regenerating ? 'Regenerating...' : 'Regenerate'}
       </button>
     </div>
   )
@@ -355,9 +351,7 @@ function EditableField({
       </span>
       <p className={className || 'text-sm'}>
         {value || (
-          <span className="italic text-gray-400">
-            (vacio, click para editar)
-          </span>
+          <span className="italic text-gray-400">(empty, click to edit)</span>
         )}
       </p>
     </div>

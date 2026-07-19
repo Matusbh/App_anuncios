@@ -24,34 +24,34 @@ const BRAND_PROFILE_TOOL_INPUT_SCHEMA = {
     whatTheyDo: {
       type: 'string',
       description:
-        'Que hace la empresa/producto, en 1-2 frases. "not_found" si no esta en el contenido.',
+        'What the company/product does, in 1-2 sentences. "not_found" if not present in the content.',
     },
     targetAudience: {
       type: 'string',
       description:
-        'Para quien es el producto/servicio. "not_found" si no esta en el contenido.',
+        'Who the product/service is for. "not_found" if not present in the content.',
     },
     valueProposition: {
       type: 'string',
       description:
-        'La propuesta de valor principal. "not_found" si no esta en el contenido.',
+        'The main value proposition. "not_found" if not present in the content.',
     },
     toneOfVoice: {
       type: 'string',
       description:
-        'Tono/voz de marca (ej: "profesional y directo", "cercano y desenfadado"). "not_found" si no se puede inferir del texto.',
+        'Brand tone/voice (e.g. "professional and direct", "warm and casual"). "not_found" if it cannot be inferred from the text.',
     },
     colorPalette: {
       type: 'array',
       items: { type: 'string' },
       description:
-        'Colores de marca en hex si son identificables en el contenido proporcionado. Array vacio si no hay ninguno claro.',
+        'Brand colors in hex if identifiable in the provided content. Empty array if none are clear.',
     },
     candidateImages: {
       type: 'array',
       items: { type: 'string' },
       description:
-        'URLs de imagenes candidatas a representar la marca, solo si aparecen en el contenido proporcionado. Array vacio si no hay ninguna buena.',
+        'URLs of candidate images to represent the brand, only if they appear in the provided content. Empty array if none are good.',
     },
   },
   required: [
@@ -116,7 +116,7 @@ ${extracted.colors.length > 0 ? extracted.colors.join(', ') : '(none)'}`
 function describeError(error: unknown): string {
   if (error instanceof Error) {
     if (error.name === 'TimeoutError')
-      return 'Timeout esperando respuesta del LLM'
+      return 'Timeout waiting for the LLM response'
     return error.message
   }
   return String(error)
@@ -165,7 +165,7 @@ export async function generateBrandProfile(
   if (!apiKey) {
     return {
       success: false,
-      errorReason: 'ANTHROPIC_API_KEY no esta configurado',
+      errorReason: 'ANTHROPIC_API_KEY is not configured',
     }
   }
 
@@ -207,15 +207,25 @@ export async function generateBrandProfile(
     } catch (error) {
       return {
         success: false,
-        errorReason: `Llamada al LLM fallo (intento ${attempt}): ${describeError(error)}`,
+        errorReason: `LLM call failed (attempt ${attempt}): ${describeError(error)}`,
       }
     }
 
     logTokenUsage(response.usage, attempt)
 
+    // See the equivalent check in ad-generation/generate-ads.ts: a truncated
+    // tool call fails validation with a confusing "field X is missing" error
+    // rather than a clear one, so handle it explicitly and tell the model why.
+    if (response.stop_reason === 'max_tokens') {
+      lastValidationError =
+        'Response was cut off: it exceeded the output token limit before completing'
+      retryHint = `Your previous response was cut off because it exceeded the token limit before finishing the ${TOOL_NAME} call. Keep every field noticeably shorter so the full response fits well within the limit.`
+      continue
+    }
+
     const toolInput = extractToolInput(response)
     if (toolInput === null) {
-      lastValidationError = 'El modelo no llamo a la herramienta esperada'
+      lastValidationError = 'The model did not call the expected tool'
       retryHint = `Your previous response did not call the ${TOOL_NAME} tool. You must call it with all required fields.`
       continue
     }
@@ -243,6 +253,6 @@ export async function generateBrandProfile(
 
   return {
     success: false,
-    errorReason: `La respuesta del LLM no paso la validacion tras ${MAX_RETRIES_ON_INVALID_OUTPUT + 1} intentos: ${lastValidationError}`,
+    errorReason: `The LLM response did not pass validation after ${MAX_RETRIES_ON_INVALID_OUTPUT + 1} attempts: ${lastValidationError}`,
   }
 }

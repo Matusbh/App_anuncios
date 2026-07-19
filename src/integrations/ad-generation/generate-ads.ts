@@ -9,7 +9,11 @@ import { LLM_TIMEOUT_MS } from '../../lib/limits.ts'
 // Sonnet: copywriting creativo on-tone se beneficia de un modelo mas capaz que
 // el Haiku que usamos para extraccion factual del perfil de marca.
 const MODEL = 'claude-sonnet-5'
-const MAX_OUTPUT_TOKENS = 2_048
+// 2x the typical observed usage (~700-990 tokens for 3 ads) as headroom: a
+// truncated tool call fails validation in a confusing way (see the
+// stop_reason === 'max_tokens' handling below), so it's cheaper to avoid
+// hitting the ceiling than to rely on the retry catching it.
+const MAX_OUTPUT_TOKENS = 4_096
 const MAX_RETRIES_ON_INVALID_OUTPUT = 1
 
 const BASE_SYSTEM_PROMPT = `You are an on-brand ad copywriter. You write ads strictly from the brand profile the user provides.
@@ -35,7 +39,7 @@ ${brandProfile.candidateImages.length > 0 ? brandProfile.candidateImages.join('\
 function describeError(error: unknown): string {
   if (error instanceof Error) {
     if (error.name === 'TimeoutError')
-      return 'Timeout esperando respuesta del LLM'
+      return 'Timeout waiting for the LLM response'
     return error.message
   }
   return String(error)
@@ -200,15 +204,28 @@ async function requestStructuredAdOutput<T>(
     } catch (error) {
       return {
         success: false,
-        errorReason: `Llamada al LLM fallo (intento ${attempt}): ${describeError(error)}`,
+        errorReason: `LLM call failed (attempt ${attempt}): ${describeError(error)}`,
       }
     }
 
     logTokenUsage(response.usage, options.label, attempt)
 
+    // Truncation is a distinct failure mode from "wrong shape": the tool call
+    // gets cut off mid-JSON before it closes, so extractToolInput sees a
+    // parsed object missing required keys entirely (e.g. `ads` absent) rather
+    // than a malformed value. A generic "didn't match schema" retry hint
+    // doesn't tell the model WHY, so it tends to reproduce the same overrun
+    // on retry — be explicit that it needs to be shorter this time.
+    if (response.stop_reason === 'max_tokens') {
+      lastValidationError =
+        'Response was cut off: it exceeded the output token limit before completing'
+      retryHint = `Your previous response was cut off because it exceeded the token limit before finishing the ${options.toolName} call. Keep every field noticeably shorter (especially primaryText) so the full response fits well within the limit.`
+      continue
+    }
+
     const toolInput = extractToolInput(response, options.toolName)
     if (toolInput === null) {
-      lastValidationError = 'El modelo no llamo a la herramienta esperada'
+      lastValidationError = 'The model did not call the expected tool'
       retryHint = `Your previous response did not call the ${options.toolName} tool. You must call it with all required fields.`
       continue
     }
@@ -236,7 +253,7 @@ async function requestStructuredAdOutput<T>(
 
   return {
     success: false,
-    errorReason: `La respuesta del LLM no paso la validacion tras ${MAX_RETRIES_ON_INVALID_OUTPUT + 1} intentos: ${lastValidationError}`,
+    errorReason: `The LLM response did not pass validation after ${MAX_RETRIES_ON_INVALID_OUTPUT + 1} attempts: ${lastValidationError}`,
   }
 }
 
@@ -261,7 +278,7 @@ export async function generateAds(
   if (!apiKey) {
     return {
       success: false,
-      errorReason: 'ANTHROPIC_API_KEY no esta configurado',
+      errorReason: 'ANTHROPIC_API_KEY is not configured',
     }
   }
 
@@ -307,7 +324,7 @@ export async function regenerateOneAd(
   if (!apiKey) {
     return {
       success: false,
-      errorReason: 'ANTHROPIC_API_KEY no esta configurado',
+      errorReason: 'ANTHROPIC_API_KEY is not configured',
     }
   }
 

@@ -10,7 +10,7 @@ Registro vivo de cosas en las que nos hemos atascado durante el desarrollo y có
 
 **Síntoma:** `npm run db:push` fallaba con `Error: Interactive prompts require a TTY terminal` — drizzle-kit detectaba que se borraba una tabla (`todos`) y se creaban otras nuevas, y quería preguntar interactivamente si alguna era un "rename" de `todos`. En un entorno no interactivo (agente) eso no se puede responder.
 
-**Solución:** Borrar `todos` manualmente con una query SQL directa (`DROP TABLE IF EXISTS todos`) *antes* de correr `db:push`. Así drizzle-kit ve un DROP y unos CREATE en pasos separados, sin ambigüedad de rename, y no pregunta nada.
+**Solución:** Borrar `todos` manualmente con una query SQL directa (`DROP TABLE IF EXISTS todos`) _antes_ de correr `db:push`. Así drizzle-kit ve un DROP y unos CREATE en pasos separados, sin ambigüedad de rename, y no pregunta nada.
 
 ---
 
@@ -35,8 +35,9 @@ Registro vivo de cosas en las que nos hemos atascado durante el desarrollo y có
 **Causa:** El `tsconfig.json` del proyecto tiene `noUncheckedIndexedAccess` desactivado, así que TypeScript asume que `const [x] = array` siempre da `x: T` (nunca `undefined`), aunque en tiempo real de ejecución una query `SELECT ... WHERE` sí puede devolver `[]`. El lint confía en ese tipo (incorrecto) y marca la comprobación como redundante.
 
 **Solución:** Distinguir dos casos:
-- Si el array *sí* está garantizado no-vacío (ej. `INSERT ... RETURNING` de una sola fila), quitar la comprobación: es código muerto de verdad.
-- Si el array *puede* estar vacío de verdad (ej. `SELECT ... WHERE id = ?` con un id que podría no existir), usar `.at(0)` en vez de destructuring — `Array.prototype.at()` está tipado como `T | undefined` siempre, independientemente de `noUncheckedIndexedAccess`, así que TypeScript y ESLint quedan de acuerdo con la realidad.
+
+- Si el array _sí_ está garantizado no-vacío (ej. `INSERT ... RETURNING` de una sola fila), quitar la comprobación: es código muerto de verdad.
+- Si el array _puede_ estar vacío de verdad (ej. `SELECT ... WHERE id = ?` con un id que podría no existir), usar `.at(0)` en vez de destructuring — `Array.prototype.at()` está tipado como `T | undefined` siempre, independientemente de `noUncheckedIndexedAccess`, así que TypeScript y ESLint quedan de acuerdo con la realidad.
 
 ---
 
@@ -56,7 +57,7 @@ Registro vivo de cosas en las que nos hemos atascado durante el desarrollo y có
 
 **Cuándo:** Verificando el flujo completo en el navegador, después de resolver el problema de la VPN.
 
-**Síntoma:** `createProject` (POST) funcionaba siempre bien, pero la petición inmediatamente siguiente — `getProject` (GET, disparada por navegación *client-side* vía RPC) — se quedaba colgada hasta que el runtime de Workers la mataba: `"The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response."` Reiniciar el servidor de dev no lo arreglaba; el patrón se repetía en cada intento.
+**Síntoma:** `createProject` (POST) funcionaba siempre bien, pero la petición inmediatamente siguiente — `getProject` (GET, disparada por navegación _client-side_ vía RPC) — se quedaba colgada hasta que el runtime de Workers la mataba: `"The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response."` Reiniciar el servidor de dev no lo arreglaba; el patrón se repetía en cada intento.
 
 **Diagnóstico:** Una petición SSR directa a `/project/:id` (sin pasar por navegación cliente) respondía en <1s, así que la base de datos en sí funcionaba bien. El problema era específico de reutilizar una conexión TCP persistente (`pg.Pool` vía `drizzle-orm/node-postgres`) entre invocaciones separadas del Worker — algo que el runtime de Cloudflare Workers no soporta de forma fiable (los sockets no sobreviven bien entre invocaciones, incluso en Miniflare simulando el entorno real).
 
@@ -83,3 +84,21 @@ Registro vivo de cosas en las que nos hemos atascado durante el desarrollo y có
 **Causa:** Node (y probablemente el runtime de Workers) suele compilarse con datos ICU reducidos (`small-icu`), que solo incluyen datos completos para `en-US`. Locales como `es-ES` caen silenciosamente a un formato sin agrupar, sin lanzar ningún error — el bug es fácil de no notar porque no falla, solo se ve "raro".
 
 **Solución:** No depender de `Intl`/`toLocaleString` para esto. Formatear el separador de miles a mano con una regex (`n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')`), que funciona igual en cualquier runtime sin depender de qué datos ICU estén compilados.
+
+---
+
+## 8. Generación de anuncios fallaba de forma intermitente en páginas de contenido genérico
+
+**Cuándo:** Probando en producción con `https://en.wikipedia.org/wiki/HTTP` — la generación de anuncios fallaba con un mensaje críptico: `ads: Invalid input` repetido dos veces (una por cada intento, incluido el retry).
+
+**Síntoma:** No era reproducible de forma consistente — de ~20 intentos con el mismo perfil de marca exacto, solo falló la primera vez que lo vio el usuario. El fallo parcial se manejó con gracia (banner de "Resultado parcial", sin crash), pero la causa de fondo no estaba diagnosticada.
+
+**Diagnóstico:** Probé directamente contra el SDK de Anthropic forzando un `max_tokens` diminuto (150) para provocar un truncamiento a propósito. Confirmado: cuando la respuesta se corta a mitad de generación (`stop_reason: 'max_tokens'`), el SDK deja `tool_use.input` como `{}` — sin la clave `ads` en absoluto. Eso es exactamente lo que hace que Zod reporte `ads: Invalid input` (ve `ads` como `undefined`, no como un array vacío ni mal formado). El límite normal era 2048 tokens; las salidas típicas rondan 700-990, pero el modelo ocasionalmente se explaya más de la cuenta — páginas de contenido genérico y no comercial (como un artículo de Wikipedia) parecen inducirlo con más frecuencia, quizás porque el modelo intenta compensar la falta de señal de marca con explicaciones más largas.
+
+Un detalle adicional: como el retry usaba un mensaje genérico ("tu respuesta anterior no cumplió el schema"), el modelo no sabía que el problema era de longitud, así que el segundo intento a menudo se truncaba igual.
+
+**Solución:**
+
+1. Subir `MAX_OUTPUT_TOKENS` en `generate-ads.ts` de 2048 a 4096 (2x el uso típico observado), en `src/integrations/ad-generation/generate-ads.ts`.
+2. Detectar `response.stop_reason === 'max_tokens'` explícitamente en el loop de reintento (tanto en `generate-ads.ts` como en `generate-brand-profile.ts`, mismo riesgo latente aunque menos probable ahí) y darle al modelo una pista específica de retry ("tu respuesta anterior se cortó por exceder el límite de tokens, sé más conciso") en vez de la genérica de "no cumplió el schema".
+3. Verificado forzando de nuevo el truncamiento (`max_tokens: 150` temporalmente) con el fix aplicado: el error ahora es claro (`Response was cut off: it exceeded the output token limit before completing`) en vez de la críptica `ads: Invalid input`.

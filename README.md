@@ -1,255 +1,155 @@
-Welcome to your new TanStack Start app! 
+**English** | [Español](README.es.md)
 
-# Getting Started
+# Snaprime
 
-To run this application:
+> Paste a website URL → get an AI-generated brand profile and ready-to-edit ads, persisted in a database, deployed on Cloudflare Workers.
+
+**Live demo:** https://tanstack-start-app.matusbh-dev.workers.dev
+
+Built for a Snaprime take-home technical exercise. See [`BRIEF.md`](BRIEF.md) for the original assignment.
+
+## What it does
+
+1. Paste a URL.
+2. The app extracts the page's content — with a headless-browser fallback ([Browserless](https://browserless.io)) for JS-rendered pages that a plain fetch can't read.
+3. Claude turns that content into a structured brand profile (what they do, target audience, value proposition, tone of voice, color palette, candidate images) — never inventing facts; missing data is reported as `"not_found"`, not guessed.
+4. Claude generates 1-3 on-brand ads from that profile, each with a creative concept, primary text, headline, description, CTA, and an image chosen only from the page's own candidate images (never a hallucinated URL).
+5. Everything is persisted in Postgres. From the project page you can edit any ad's text fields inline, or regenerate a single ad — edits to one ad are guaranteed not to be clobbered by regenerating another.
+
+## Stack
+
+- **Framework:** [TanStack Start](https://tanstack.com/start) (React), server functions (`createServerFn`) for all backend logic.
+- **Deploy:** Cloudflare Workers, via `@cloudflare/vite-plugin` (runs on workerd/Miniflare in both dev and build).
+- **Database:** PostgreSQL on [Neon](https://neon.tech), via [Drizzle ORM](https://orm.drizzle.team). Driver: `drizzle-orm/neon-http` + `@neondatabase/serverless` (see [Key decisions](#key-decisions) — this mattered).
+- **AI:** Anthropic API via `@anthropic-ai/sdk` directly.
+  - Brand profile: `claude-haiku-4-5` (factual extraction — fast and cheap).
+  - Ads: `claude-sonnet-5` (creative copywriting benefits from more capability).
+- **JS rendering fallback:** Browserless (REST `/content` endpoint).
+- **Validation:** Zod on every LLM input/output and every server function input.
+- **HTML parsing:** `node-html-parser` (pure JS, works under Workers' `nodejs_compat`).
+
+## Project structure
+
+```
+src/
+  db/
+    schema.ts               -- Drizzle tables (projects, brand_profiles, ads) + inferred types
+    index.ts                 -- Drizzle client (neon-http)
+  integrations/
+    web-extraction/          -- extractPageContent: simple fetch + Browserless fallback + parsing
+    brand-profile/            -- generateBrandProfile: LLM (Haiku) -> Zod-validated profile
+    ad-generation/             -- generateAds / regenerateOneAd: LLM (Sonnet) -> validated ads
+  server/
+    projects.ts                -- createProject, getProject (server functions)
+    ads.ts                      -- updateAd, regenerateAd (server functions)
+  routes/
+    index.tsx                    -- URL input + project creation
+    project.$projectId.tsx        -- project view: profile + editable ad cards
+  lib/
+    limits.ts                     -- centralized timeouts/thresholds
+  test/
+    test-extraction.ts             -- manual test script for extractPageContent
+    test-brand-profile.ts          -- manual test script for extraction + brand profile
+    test-ad-generation.ts          -- manual test script for extraction + profile + ads + regen
+```
+
+Each `integrations/` module is independent and was tested in isolation (its own script under `src/test/`) before being wired into anything else.
+
+## Getting started
 
 ```bash
 npm install
+cp .env.example .env.local  # fill in DATABASE_URL, ANTHROPIC_API_KEY, BROWSERLESS_TOKEN
+npm run db:push
 npm run dev
 ```
 
-# Building For Production
+Open `http://localhost:3000`.
 
-To build this application for production:
+> **Windows + ProtonVPN:** if DB connections fail with `ECONNRESET` or hang, fully quit ProtonVPN (tray icon → Exit, not just "disconnect") — its network filter interferes with the SSL handshake to Neon even while "disconnected." See `dificultades.md`.
 
-```bash
-npm run build
-```
-
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+### Deploying
 
 ```bash
-npm run test
+npm run deploy
 ```
 
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `npm install @tailwindcss/vite tailwindcss -D`
-
-## Linting & Formatting
-
-
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
+Environment variables in `.env.local` are **not** uploaded automatically — set them as Worker secrets once:
 
 ```bash
-npm run lint
-npm run format
-npm run check
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put BROWSERLESS_TOKEN
 ```
 
+## Database schema
 
-## Deploy to Cloudflare Workers
+**`projects`** — `id`, `url`, `status` (`pending` → `extracting` → `ready`/`failed`), `error_message` (also used for "partially degraded but still usable" results, not just total failures), `total_tokens_used`, `processing_time_ms`, timestamps.
 
-This project uses the Cloudflare Vite plugin (configured in `vite.config.ts`) and `wrangler.jsonc`:
+**`brand_profiles`** — one per project. The four text fields (`what_they_do`, `target_audience`, `value_proposition`, `tone_of_voice`) are `NOT NULL`: the row is only inserted once the LLM's `"not_found"` fallback has already been applied, so the schema itself guarantees there's never a silent null. `color_palette`/`candidate_images` are nullable JSONB arrays.
 
-1. Install Wrangler: `npm install -g wrangler`
-2. Authenticate: `wrangler login`
-3. Deploy: `npx wrangler deploy`
+**`ads`** — one row per generated ad, `is_user_edited` flips to `true` on manual edit and resets to `false` on regeneration (it's new generated content, not a hand edit anymore).
 
-For production env vars, run `wrangler secret put MY_VAR` for each secret listed in `.env.example`. Public (non-secret) vars go in `wrangler.jsonc` under `vars`.
+## Key decisions
 
-KV, D1, R2, and Durable Object bindings are configured in `wrangler.jsonc` — see https://developers.cloudflare.com/workers/wrangler/configuration/.
+**Neon's HTTP driver, not `node-postgres`.** The initial scaffold used `drizzle-orm/node-postgres`. During production verification, GET requests immediately following a POST would hang under the Cloudflare Workers runtime — persistent TCP connections (`pg.Pool`) aren't reliably reusable across separate Worker invocations, even in local Miniflare. Switched to `drizzle-orm/neon-http` + `@neondatabase/serverless`, Neon's official recommendation for Workers. Full diagnosis in `dificultades.md`.
 
+**Direct Anthropic SDK, not `@tanstack/ai-anthropic`.** The scaffold had `@tanstack/ai-anthropic` installed, but its `structuredOutput()` is built to be driven by `@tanstack/ai`'s full chat/agent engine (typed internal logger, its own message format) — more machinery than a single isolated "send context, get validated JSON" call needs. Used `@anthropic-ai/sdk` directly instead, with the same forced tool-call pattern the adapter uses internally.
 
-# TanStack Chat Application
+**`node-html-parser`, not native `HTMLRewriter`.** Cloudflare's native `HTMLRewriter` avoids a dependency, but its streaming/handler API is considerably more verbose for pulling several fields (title, meta, headings, images, colors) out of one document. With `nodejs_compat` enabled, a lightweight pure-JS parser is just as viable and much simpler to write against.
 
-Am example chat application built with TanStack Start, TanStack Store, and Claude AI.
+**No queue, no real progress stream.** `createProject` is a single blocking call doing extraction plus two LLM calls synchronously (typically 10-30s). There's no job queue or SSE — the "steps" shown on the home page while creating a project are client-side timers, not real server push. A deliberate scope cut; see below.
 
-## .env Updates
+**`imageUrl` is schema-constrained, not just prompted.** The ad-generation tool's JSON Schema sets `enum: candidateImages` (or `enum: ['']` when there are none) on the `imageUrl` field, so Claude is constrained at generation time to one of the page's real images — never a hallucinated URL. Zod re-validates the same constraint as a backstop.
 
-```env
-ANTHROPIC_API_KEY=your_anthropic_api_key
-```
+**Graceful degradation, never total loss.** If brand-profile generation fails, the project still saves as `ready` with what extraction produced; if ad generation fails, the profile that was already generated is kept. `status: 'failed'` is reserved for when extraction itself fails and there's genuinely nothing to show.
 
-## ✨ Features
+## Cost/latency limits
 
-### AI Capabilities
-- 🤖 Powered by Claude 3.5 Sonnet 
-- 📝 Rich markdown formatting with syntax highlighting
-- 🎯 Customizable system prompts for tailored AI behavior
-- 🔄 Real-time message updates and streaming responses (coming soon)
+All timeouts live in `src/lib/limits.ts` (previously `LLM_TIMEOUT_MS` was duplicated with the same value in two separate files):
 
-### User Experience
-- 🎨 Modern UI with Tailwind CSS and Lucide icons
-- 🔍 Conversation management and history
-- 🔐 Secure API key management
-- 📋 Markdown rendering with code highlighting
+| Constant                       | Value | What it bounds                                           |
+| ------------------------------ | ----- | -------------------------------------------------------- |
+| `SIMPLE_FETCH_TIMEOUT_MS`      | 15s   | Plain `fetch` of the page                                |
+| `BROWSERLESS_TIMEOUT_MS`       | 20s   | JS-rendering fallback                                    |
+| `LLM_TIMEOUT_MS`               | 25s   | Each Claude call (profile and ads share this)            |
+| `SLOW_PROCESSING_THRESHOLD_MS` | 60s   | Above this, the UI flags the run as slower than expected |
 
-### Technical Features
-- 📦 Centralized state management with TanStack Store
-- 🔌 Extensible architecture for multiple AI providers
-- 🛠️ TypeScript for type safety
+- At most 1 retry per LLM call when the output fails Zod validation (2 attempts total).
+- Visible text sent to the brand-profile LLM is truncated to 6,000 characters.
+- Every call's token usage is logged server-side, including the reason a retry was triggered.
+- **Visible in the UI, not just server logs:** the project page shows `Generated in {seconds}s · {tokens} tokens used` right under the status. If a run exceeds the slow-processing threshold, an explicit banner explains that something may have degraded due to a timeout.
 
-## Architecture
+## What was consciously deferred
 
-### Tech Stack
-- **Frontend Framework**: TanStack Start
-- **Routing**: TanStack Router
-- **State Management**: TanStack Store
-- **Styling**: Tailwind CSS
-- **AI Integration**: Anthropic's Claude API
+- Real project-creation progress (SSE/polling) — simulated with client-side timers instead.
+- Manual image swap/upload (the brief allows for it; this iteration only covers inline text editing).
+- Advanced candidate-image dedup/filtering.
+- Precise brand-color extraction (only checks inline `style=""` attributes, not full stylesheets).
+- Explicit SSRF hardening on arbitrary user-submitted URLs.
+- Automated tests — only manual verification scripts under `src/test/` and ad-hoc Playwright checks during development.
 
+## Known issues (fixed)
 
-## Routing
+- Ad generation occasionally failed Zod validation twice in a row on pages with very generic, non-commercial content (e.g. a Wikipedia article), surfacing a cryptic `ads: Invalid input` error. Root cause: on rare, unusually verbose generations the response was truncated at the `max_tokens` ceiling mid-JSON, leaving the tool call's `ads` array missing entirely rather than malformed — and the generic retry hint didn't tell the model why, so the retry often truncated again too. Fixed by raising the token ceiling (2x typical usage) and detecting `stop_reason === 'max_tokens'` explicitly to give the retry a specific "be more concise" hint instead of a generic one. See `dificultades.md` #8 for the full diagnosis.
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+## How this was tested
 
-### Adding A Route
+- `web-extraction`: `npx tsx src/test/test-extraction.ts` against real URLs (static, SPA, 404, nonexistent domain).
+- `brand-profile`: `npx tsx src/test/test-brand-profile.ts`.
+- `ad-generation`: `npx tsx src/test/test-ad-generation.ts` (includes a `regenerateOneAd` check comparing the original vs. regenerated creative idea).
+- Full browser flow: verified with an ad-hoc Playwright script (installed temporarily, not part of the repo) that creates a real project, edits one ad card, regenerates a different one, and confirms via screenshot that the first edit survives untouched — both locally and against the deployed Cloudflare URL, including a full page reload to confirm the edit was persisted server-side, not just held in client state.
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
+## Using an AI coding agent
 
-TanStack will automatically generate the content of the route file for you.
+**Agent/harness:** Claude Code (Claude Sonnet 5).
 
-Now that you have two routes you can use a `Link` component to navigate between them.
+Used for essentially the whole build: designing and applying the Drizzle schema, the three integration modules (extraction, brand profile, ads) each tested in isolation before being wired together, the server functions, the TanStack Start routes, the Cloudflare deploy, and end-to-end verification in a real browser (an ad-hoc Playwright script, since no headless-browser CLI was preinstalled in this Windows environment).
 
-### Adding Links
+**Where it helped most:** diagnosing the Cloudflare Workers connection-hanging bug — it correctly identified that `node-postgres`/`pg.Pool` isn't reliable under the Workers runtime and proposed and applied the fix (Neon's `neon-http` driver) instead of endlessly retrying the same failing approach.
 
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
+**Where it needed correction:** confirming, twice, that ProtonVPN was genuinely fully closed (not just "disconnected") when the Neon connection kept failing intermittently — the agent diagnosed the cause correctly but has no way to act on the user's own operating system.
 
-```tsx
-import { Link } from "@tanstack/react-router";
-```
+---
 
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+More detailed running notes (in Spanish) live in [`documentacion.md`](documentacion.md) and [`dificultades.md`](dificultades.md).

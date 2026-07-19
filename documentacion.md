@@ -10,6 +10,8 @@ Snaprime: pegar una URL → extraer contenido de la web (incluso JS-rendered) �
 
 Ver `BRIEF.md` para el enunciado completo del ejercicio y `CLAUDE.md` para las reglas no negociables del proyecto.
 
+**URL desplegada:** https://tanstack-start-app.matusbh-dev.workers.dev — flujo end-to-end verificado en producción (extracción con fallback de Browserless, perfil de marca, anuncios, edición persistida en la DB real, todo confirmado con un reload completo tras editar). Ver §12.
+
 ## 2. Stack
 
 - **Framework:** TanStack Start (React), server functions (`createServerFn`) para toda la lógica de backend.
@@ -198,3 +200,19 @@ Además:
 - Se usó para: diseño y aplicación del schema de Drizzle, los 3 módulos de integración (extracción, perfil de marca, anuncios) probados de forma aislada antes de conectarlos, las server functions, las rutas de TanStack Start, y la verificación end-to-end en navegador real (Playwright ad-hoc).
 - **Dónde ayudó de forma notable:** diagnóstico del bloqueo de conexión a la base de datos bajo el runtime de Cloudflare Workers (identificó que `node-postgres`/`pg.Pool` no es fiable en Workers y propuso + aplicó el cambio a `neon-http`, el driver recomendado por Neon) en vez de quedarse reintentando a ciegas.
 - **Dónde hizo falta corregirlo / intervención humana:** confirmar dos veces que ProtonVPN estaba realmente cerrado del todo (no solo "desconectado") cuando la conexión a Neon fallaba de forma intermitente — el agente diagnosticó bien la causa pero no podía actuar sobre el sistema operativo del usuario.
+
+## 12. Deploy a Cloudflare Workers
+
+**URL:** https://tanstack-start-app.matusbh-dev.workers.dev
+
+Pasos seguidos:
+
+1. `npm run deploy` (`vite build` + `wrangler deploy`). Compiló y desplegó sin errores de compatibilidad con el runtime de Workers a la primera — no hizo falta ningún ajuste de código para el deploy en sí.
+2. Las variables de entorno de `.env.local` **no** se suben solas (tal como avisa `CLAUDE.md`) — hubo que configurarlas como secrets del Worker con `wrangler secret put DATABASE_URL` / `ANTHROPIC_API_KEY` / `BROWSERLESS_TOKEN`, leyendo los valores de `.env.local` y pasándolos por stdin (nunca como argumento de línea de comandos, para no dejarlos en el historial de shell). Confirmado con `wrangler secret list` antes (vacío) y después (los 3 presentes).
+3. Los secrets de Cloudflare se aplican de inmediato al Worker ya desplegado, sin necesidad de un segundo deploy.
+
+**Verificación end-to-end en producción** (con `https://quotes.toscrape.com/js/`, para forzar también el fallback de Browserless):
+- Proyecto creado en ~12.7s, perfil de marca generado correctamente, 3 anuncios generados (sin `candidateImages` en este sitio → los 3 muestran "Sin imagen" tal como se espera).
+- El resumen de coste/latencia se ve correctamente: "Generado en 12.7s · 3.645 tokens usados".
+- Se editó el headline de un anuncio y **se recargó la página completa** (nueva carga SSR desde cero, no solo estado de React) — el cambio seguía ahí, confirmando que la edición se persiste en la base de datos de producción real, no solo en memoria del cliente.
+- Sin errores de consola durante todo el flujo.
